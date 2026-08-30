@@ -1,0 +1,206 @@
+import discord
+from discord.ext import commands, tasks
+import os
+from dotenv import load_dotenv
+import database
+import parser
+import ui_components
+import binance_api
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
+load_dotenv()
+
+TOKEN = os.getenv('DISCORD_TOKEN')
+SOURCE_CHANNELS = [int(c.strip()) for c in os.getenv('SOURCE_CHANNELS', '').split(',') if c.strip()]
+TRADE_CHANNEL_ID = int(os.getenv('TRADE_CHANNEL_ID', '0'))
+UPDATES_CHANNEL_ID = int(os.getenv('UPDATES_CHANNEL_ID', '0'))
+ACTIVE_TRADES_CHANNEL_ID = int(os.getenv('ACTIVE_TRADES_CHANNEL_ID', '0'))
+PUBLIC_TRADE_CHANNEL_ID = int(os.getenv('PUBLIC_TRADE_CHANNEL_ID', '0'))
+SIGNAL_KEYWORD = os.getenv('SIGNAL_KEYWORD', '')
+
+intents = discord.Intents.default()
+intents.message_content = True
+
+bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Removed dashboard logic
+
+@bot.event
+async def on_trade_action(trade, action_msg, author_name):
+    # Log to updates channel only if action_msg is provided
+    updates_channel = bot.get_channel(UPDATES_CHANNEL_ID)
+    if updates_channel and action_msg:
+        log_text = f"{trade['direction']} {trade['pair']} : {action_msg} @{author_name}"
+        await updates_channel.send(log_text)
+
+@bot.event
+async def on_ready():
+    logging.info(f'Logged in as {bot.user.name}')
+    database.init_db()
+    if not price_check_loop.is_running():
+        price_check_loop.start()
+
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author == bot.user:
+        return
+
+    # Check if message is in one of the source channels
+    if message.channel.id in SOURCE_CHANNELS:
+        logging.info(f"Received message in source channel {message.channel.id}")
+        # If a signal keyword is defined, skip messages that don't contain it
+        if SIGNAL_KEYWORD and SIGNAL_KEYWORD.upper() not in message.content.upper():
+            logging.info(f"Message ignored: did not contain keyword '{SIGNAL_KEYWORD}'")
+            return
+
+        trade_data = parser.parse_trade_signal(message.content)
+        
+        if trade_data:
+            logging.info(f"New trade detected: {trade_data}")
+            
+            initial_status = 'ACTIVE' if '@M' in message.content.upper() else 'WAITING'
+            trade_id = database.insert_trade(
+                trade_data['pair'],
+                trade_data['direction'],
+                trade_data['entry'],
+                trade_data['tp'],
+                trade_data['sl'],
+                message.author.display_name,
+                status=initial_status
+            )
+            
+            trade = database.get_trade(trade_id)
+            
+            trade_channel = bot.get_channel(TRADE_CHANNEL_ID)
+            public_channel = bot.get_channel(PUBLIC_TRADE_CHANNEL_ID)
+            
+            logging.info(f"Trade Channel found: {trade_channel is not None}")
+            logging.info(f"Public Channel found: {public_channel is not None}")
+            
+            if trade_channel:
+                embed = ui_components.create_trade_embed(trade)
+                view = ui_components.TradeView(trade_id)
+                msg_content = f"Trade By @{message.author.display_name}"
+                try:
+                    sent_message = await trade_channel.send(content=msg_content, embed=embed, view=view)
+                    
+                    pub_msg_id = None
+                    pub_ch_id = None
+                    if public_channel:
+                        try:
+                            pub_msg = await public_channel.send(content=msg_content, embed=embed)
+                            pub_msg_id = pub_msg.id
+                            pub_ch_id = pub_msg.channel.id
+                            logging.info(f"Sent public message: {pub_msg_id}")
+                        except discord.Forbidden:
+                            logging.error(f"Missing permissions to send messages to Public Trade channel: {PUBLIC_TRADE_CHANNEL_ID}")
+                        except Exception as e:
+                            logging.error(f"Error sending public message: {e}")
+
+                    database.update_message_ids(trade_id, sent_message.id, sent_message.channel.id, pub_msg_id, pub_ch_id)
+                    active_channel = bot.get_channel(ACTIVE_TRADES_CHANNEL_ID)
+                    if active_channel:
+                        try:
+                            order_type = "Market/CMP" if initial_status == 'ACTIVE' else "Limit"
+                            await active_channel.send(f"🟢 **New Trade ({order_type}):** {trade['direction']} {trade['pair']} | Entry: {trade['entry_price']}")
+                        except discord.Forbidden:
+                            logging.error(f"Missing permissions for Active Trades channel: {ACTIVE_TRADES_CHANNEL_ID}")
+                except discord.Forbidden:
+                    logging.error(f"Missing permissions to send messages to Trade channel: {TRADE_CHANNEL_ID}")
+                except Exception as e:
+                    logging.error(f"Error sending trade message: {e}")
+            else:
+                logging.error(f"Trade channel {TRADE_CHANNEL_ID} not found.")
+        else:
+            logging.info(f"Failed to parse trade signal from message: {message.content}")
+
+    await bot.process_commands(message)
+
+@tasks.loop(seconds=30)
+async def price_check_loop():
+    open_trades = database.get_open_trades() 
+    for trade in open_trades:
+        current_price = await binance_api.get_current_price(trade['pair'])
+        if not current_price:
+            continue
+            
+        direction = trade['direction']
+        entry = trade['entry_price']
+        tp = trade['tp_price']
+        sl = trade['sl_price']
+        status = trade['status']
+        
+        status_updated = False
+        new_status = None
+        action_msg = ""
+        
+        # Check limit entry if waiting
+        if status == 'WAITING':
+            if (direction == 'LONG' and current_price <= entry) or \
+               (direction == 'SHORT' and current_price >= entry):
+                new_status = 'ACTIVE'
+                status_updated = True
+                action_msg = f"Limit Entry Filled 🚀🚀"
+                
+        # Check TP/SL if active or BE
+        elif status in ['ACTIVE', 'BE']:
+            if direction == 'LONG':
+                if current_price >= tp:
+                    new_status = 'TP_HIT'
+                    status_updated = True
+                    action_msg = f"Take Profit Hit @ {current_price} 🎯"
+                elif current_price <= sl:
+                    new_status = 'SL_HIT'
+                    status_updated = True
+                    action_msg = f"Stop Loss Hit @ {current_price} ❌"
+            elif direction == 'SHORT':
+                if current_price <= tp:
+                    new_status = 'TP_HIT'
+                    status_updated = True
+                    action_msg = f"Take Profit Hit @ {current_price} 🎯"
+                elif current_price >= sl:
+                    new_status = 'SL_HIT'
+                    status_updated = True
+                    action_msg = f"Stop Loss Hit @ {current_price} ❌"
+                
+        if status_updated:
+            database.update_trade_status(trade['id'], new_status)
+            updated_trade = database.get_trade(trade['id'])
+            
+            # Dispatch event to update logs and active list
+            bot.dispatch("trade_action", updated_trade, action_msg, updated_trade['author_name'])
+            
+            # Update the original Discord message embed
+            channel = bot.get_channel(updated_trade['channel_id'])
+            if channel:
+                try:
+                    message = await channel.fetch_message(updated_trade['message_id'])
+                    # If closed or hit stops, remove buttons. If active, keep buttons.
+                    embed = ui_components.create_trade_embed(updated_trade)
+                    if new_status in ['TP_HIT', 'SL_HIT']:
+                        await message.edit(embed=embed, view=None)
+                    else:
+                        await message.edit(embed=embed)
+                except discord.NotFound:
+                    logging.warning(f"Message {updated_trade['message_id']} not found.")
+                except Exception as e:
+                    logging.error(f"Failed to update message: {e}")
+                    
+            # Update the public Discord message embed (never has buttons)
+            if updated_trade.get('public_channel_id') and updated_trade.get('public_message_id'):
+                pub_channel = bot.get_channel(updated_trade['public_channel_id'])
+                if pub_channel:
+                    try:
+                        pub_msg = await pub_channel.fetch_message(updated_trade['public_message_id'])
+                        embed = ui_components.create_trade_embed(updated_trade)
+                        await pub_msg.edit(embed=embed)
+                    except Exception as e:
+                        pass
+
+if __name__ == '__main__':
+    if not TOKEN or TOKEN == 'your_discord_bot_token_here':
+        print("Please configure your .env file with a valid DISCORD_TOKEN.")
+    else:
+        bot.run(TOKEN)
