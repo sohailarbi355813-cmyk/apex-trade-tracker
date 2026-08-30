@@ -11,6 +11,10 @@ async def get_current_price(pair: str):
     # Binance pairs are usually uppercase without slashes, e.g., BTCUSDT
     pair = pair.replace("/", "").replace("-", "").replace("_", "").upper()
     
+    # Auto-append USDT if user just typed the coin (e.g., "HBAR" -> "HBARUSDT")
+    if not pair.endswith("USDT") and not pair.endswith("USD") and not pair.endswith("BTC"):
+        pair += "USDT"
+    
     async with aiohttp.ClientSession() as session:
         try:
             async with session.get(BINANCE_API_URL, params={"symbol": pair}) as response:

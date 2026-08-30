@@ -25,15 +25,23 @@ def parse_trade_signal(message_content):
         direction = pair_direction_match.group(2)
         
     # Extract prices using flexible regex
-    entry_match = re.search(r'(?:ENTRY|@M?)\s*[:\-]?\s*([\d\.]+)', content)
+    entry_match = re.search(r'(?:ENTRY|@M?)(?:\s*[:\-]?\s*([\d\.]+))?', content)
     sl_match = re.search(r'SL\s*[:\-]?\s*([\d\.]+)', content)
     tp_match = re.search(r'TP\s*[:\-]?\s*([\d\.]+)', content)
     
-    if entry_match and sl_match and tp_match:
+    entry_val = None
+    if entry_match:
+        val = entry_match.group(1)
+        if val:
+            entry_val = float(val)
+        elif '@M' in content:
+            entry_val = -1.0  # Sentinel value for Market Price
+            
+    if entry_val is not None and sl_match and tp_match:
         return {
             'pair': pair.replace('/', ''),
             'direction': direction,
-            'entry': float(entry_match.group(1)),
+            'entry': entry_val,
             'sl': float(sl_match.group(1)),
             'tp': float(tp_match.group(1))
         }

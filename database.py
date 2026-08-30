@@ -28,6 +28,12 @@ def init_db():
         cursor.execute("ALTER TABLE trades ADD COLUMN public_channel_id INTEGER")
     except sqlite3.OperationalError:
         pass # Columns already exist
+        
+    try:
+        cursor.execute("ALTER TABLE trades ADD COLUMN active_log_message_id INTEGER")
+        cursor.execute("ALTER TABLE trades ADD COLUMN active_log_channel_id INTEGER")
+    except sqlite3.OperationalError:
+        pass # Columns already exist
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -67,14 +73,14 @@ def insert_trade(pair, direction, entry, tp, sl, author_name, status='WAITING'):
     conn.close()
     return trade_id
 
-def update_message_ids(trade_id, message_id, channel_id, pub_msg_id=None, pub_ch_id=None):
+def update_message_ids(trade_id, message_id, channel_id, pub_msg_id=None, pub_ch_id=None, active_msg_id=None, active_ch_id=None):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         UPDATE trades
-        SET message_id = ?, channel_id = ?, public_message_id = ?, public_channel_id = ?
+        SET message_id = ?, channel_id = ?, public_message_id = ?, public_channel_id = ?, active_log_message_id = ?, active_log_channel_id = ?
         WHERE id = ?
-    ''', (message_id, channel_id, pub_msg_id, pub_ch_id, trade_id))
+    ''', (message_id, channel_id, pub_msg_id, pub_ch_id, active_msg_id, active_ch_id, trade_id))
     conn.commit()
     conn.close()
 

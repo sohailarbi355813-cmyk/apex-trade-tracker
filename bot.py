@@ -34,6 +34,35 @@ async def on_trade_action(trade, action_msg, author_name):
     if updates_channel and action_msg:
         log_text = f"{trade['direction']} {trade['pair']} : {action_msg} @{author_name}"
         await updates_channel.send(log_text)
+        
+    # Edit the active log message
+    if trade.get('active_log_message_id') and trade.get('active_log_channel_id'):
+        active_channel = bot.get_channel(trade['active_log_channel_id'])
+        if active_channel:
+            try:
+                active_msg = await active_channel.fetch_message(trade['active_log_message_id'])
+                current_content = active_msg.content.split('\n')[0] # Keep only original first line
+                
+                status = trade['status']
+                new_line = ""
+                if status == 'CANCELLED':
+                    new_line = "🔴 Entry is Inactive now"
+                elif status == 'CLOSED':
+                    new_line = "🔴 Trade closed manually"
+                elif status == 'TP_HIT':
+                    new_line = "🎯 Take Profit Hit"
+                elif status == 'SL_HIT':
+                    new_line = "❌ Stop Loss Hit"
+                elif status == 'ACTIVE':
+                    new_line = "🏃 Entry Filled / Running"
+                else:
+                    new_line = f"Status updated to {status}"
+                    
+                await active_msg.edit(content=f"{current_content}\n{new_line}")
+            except discord.NotFound:
+                pass
+            except Exception as e:
+                logging.error(f"Failed to edit active log message: {e}")
 
 @bot.event
 async def on_ready():
@@ -61,6 +90,16 @@ async def on_message(message: discord.Message):
             logging.info(f"New trade detected: {trade_data}")
             
             initial_status = 'ACTIVE' if '@M' in message.content.upper() else 'WAITING'
+            
+            # Fetch CMP for market orders
+            if trade_data['entry'] == -1.0:
+                cmp = await binance_api.get_current_price(trade_data['pair'])
+                if cmp:
+                    trade_data['entry'] = cmp
+                else:
+                    logging.error(f"Failed to fetch CMP for {trade_data['pair']}. Defaulting to 0.0")
+                    trade_data['entry'] = 0.0
+                    
             trade_id = database.insert_trade(
                 trade_data['pair'],
                 trade_data['direction'],
@@ -99,14 +138,19 @@ async def on_message(message: discord.Message):
                         except Exception as e:
                             logging.error(f"Error sending public message: {e}")
 
-                    database.update_message_ids(trade_id, sent_message.id, sent_message.channel.id, pub_msg_id, pub_ch_id)
+                    active_msg_id = None
+                    active_ch_id = None
                     active_channel = bot.get_channel(ACTIVE_TRADES_CHANNEL_ID)
                     if active_channel:
                         try:
                             order_type = "Market/CMP" if initial_status == 'ACTIVE' else "Limit"
-                            await active_channel.send(f"🟢 **New Trade ({order_type}):** {trade['direction']} {trade['pair']} | Entry: {trade['entry_price']}")
+                            active_msg = await active_channel.send(f"🟢 **New Trade ({order_type}):** {trade['direction']} {trade['pair']} | Entry: {trade['entry_price']}")
+                            active_msg_id = active_msg.id
+                            active_ch_id = active_msg.channel.id
                         except discord.Forbidden:
                             logging.error(f"Missing permissions for Active Trades channel: {ACTIVE_TRADES_CHANNEL_ID}")
+                            
+                    database.update_message_ids(trade_id, sent_message.id, sent_message.channel.id, pub_msg_id, pub_ch_id, active_msg_id, active_ch_id)
                 except discord.Forbidden:
                     logging.error(f"Missing permissions to send messages to Trade channel: {TRADE_CHANNEL_ID}")
                 except Exception as e:
