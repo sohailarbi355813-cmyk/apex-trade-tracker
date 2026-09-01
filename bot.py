@@ -60,6 +60,7 @@ async def update_box(box_id, client):
 async def on_trade_action(trade, action_msg, author_name):
     # Log to updates channel only if action_msg is provided
     updates_channel = bot.get_channel(UPDATES_CHANNEL_ID)
+    logging.info(f"Updates channel found: {updates_channel is not None}, action_msg: {action_msg}")
     if updates_channel and action_msg:
         ping = trade.get('author_ping') or f"@{trade.get('author_name')}"
         log_text = f"{trade['direction']} {trade['pair']} : {action_msg} {ping}"
@@ -89,7 +90,7 @@ async def reset_trades(ctx):
     database.clear_global_dashboard()
     database.set_setting('global_box_updates', '0')
     database.set_setting('global_box_start_trade_id', '0')
-    await ctx.send("✅ All old test trades have been wiped from the database! The next trade will start completely fresh.")
+    await ctx.send("? All old test trades have been wiped from the database! The next trade will start completely fresh.")
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -180,7 +181,7 @@ async def on_message(message: discord.Message):
                     await update_box(box_id, bot)
                     
                     # Log to updates channel
-                    action_msg = "Limit Entry Filled 🚀🚀" if initial_status == 'ACTIVE' else "Limit Placed ⏳"
+                    action_msg = "Limit Entry Filled ????" if initial_status == 'ACTIVE' else "Limit Placed ?"
                     bot.dispatch("trade_action", database.get_trade(trade_id), action_msg, author_name)
                 except discord.Forbidden:
                     logging.error(f"Missing permissions to send messages to Trade channel: {TRADE_CHANNEL_ID}")
@@ -217,7 +218,7 @@ async def price_check_loop():
                (direction == 'SHORT' and current_price >= entry):
                 new_status = 'ACTIVE'
                 status_updated = True
-                action_msg = f"Limit Entry Filled 🚀🚀"
+                action_msg = f"Limit Entry Filled ????"
                 
         # Check TP/SL if active or BE
         elif status in ['ACTIVE', 'BE']:
@@ -225,20 +226,20 @@ async def price_check_loop():
                 if current_price >= tp:
                     new_status = 'TP_HIT'
                     status_updated = True
-                    action_msg = f"Take Profit Hit @ {current_price} 🎯"
+                    action_msg = f"Take Profit Hit @ {current_price} ??"
                 elif current_price <= sl:
                     new_status = 'SL_HIT'
                     status_updated = True
-                    action_msg = f"Stop Loss Hit @ {current_price} ❌"
+                    action_msg = f"Stop Loss Hit @ {current_price} ?"
             elif direction == 'SHORT':
                 if current_price <= tp:
                     new_status = 'TP_HIT'
                     status_updated = True
-                    action_msg = f"Take Profit Hit @ {current_price} 🎯"
+                    action_msg = f"Take Profit Hit @ {current_price} ??"
                 elif current_price >= sl:
                     new_status = 'SL_HIT'
                     status_updated = True
-                    action_msg = f"Stop Loss Hit @ {current_price} ❌"
+                    action_msg = f"Stop Loss Hit @ {current_price} ?"
                 
         if status_updated:
             database.update_trade_status(trade['id'], new_status)
