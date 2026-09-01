@@ -178,6 +178,10 @@ async def on_message(message: discord.Message):
                     
                     # Update box
                     await update_box(box_id, bot)
+                    
+                    # Log to updates channel
+                    action_msg = "Limit Entry Filled 🚀🚀" if initial_status == 'ACTIVE' else "Limit Placed ⏳"
+                    bot.dispatch("trade_action", database.get_trade(trade_id), action_msg, author_name)
                 except discord.Forbidden:
                     logging.error(f"Missing permissions to send messages to Trade channel: {TRADE_CHANNEL_ID}")
                 except Exception as e:
