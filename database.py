@@ -49,9 +49,17 @@ def init_db():
         CREATE TABLE IF NOT EXISTS log_boxes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             message_id INTEGER,
-            channel_id INTEGER
+            channel_id INTEGER,
+            author_ping TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    # Try to add author_ping to existing log_boxes table
+    try:
+        cursor.execute("ALTER TABLE log_boxes ADD COLUMN author_ping TEXT")
+    except sqlite3.OperationalError:
+        pass # Column already exists
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -192,30 +200,31 @@ def get_trades_for_box(box_id):
     conn.close()
     return [dict(row) for row in rows]
     
-def get_current_box_id():
-    # Returns the box_id that currently has less than 10 trades.
-    # If the latest box has >= 10, returns None.
+def get_current_box_id(author_ping):
+    # Find the most recent box for this author
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('SELECT id FROM log_boxes ORDER BY id DESC LIMIT 1')
+    cursor.execute('SELECT id FROM log_boxes WHERE author_ping = ? ORDER BY id DESC LIMIT 1', (author_ping,))
     row = cursor.fetchone()
     if not row:
         conn.close()
         return None
         
     box_id = row[0]
-    cursor.execute('SELECT COUNT(*) FROM trades WHERE box_id = ?', (box_id,))
+    # Count only active trades
+    cursor.execute("SELECT COUNT(*) FROM trades WHERE box_id = ? AND status IN ('WAITING', 'ACTIVE', 'BE')", (box_id,))
     count = cursor.fetchone()[0]
     conn.close()
     
-    if count >= 10:
+    # 5 active trades limit
+    if count >= 5:
         return None
     return box_id
 
-def create_new_box_id():
+def create_new_box_id(author_ping):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('INSERT INTO log_boxes DEFAULT VALUES')
+    cursor.execute('INSERT INTO log_boxes (author_ping) VALUES (?)', (author_ping,))
     box_id = cursor.lastrowid
     conn.commit()
     conn.close()

@@ -233,11 +233,15 @@ def create_trade_embed(trade_data):
     return embed
 
 def create_global_log_box(trades):
-    embed = discord.Embed(color=discord.Color.dark_theme())
-    embed.title = "Global Trade Log"
+    embed = discord.Embed(color=discord.Color.gold())
+    
+    role_name = 'Unknown'
+    if trades:
+        role_name = trades[0].get('author_name', 'Unknown')
+        
+    embed.title = f"Active Trades - {role_name}"
     
     active_trades = [t for t in trades if t['status'] in ['ACTIVE', 'WAITING', 'BE']]
-    inactive_trades = [t for t in trades if t['status'] in ['CLOSED', 'CANCELLED', 'TP_HIT', 'SL_HIT']]
     
     desc = "🟢 **Active Entries**\n"
     if active_trades:
@@ -246,15 +250,6 @@ def create_global_log_box(trades):
             desc += f"• **{t['direction']} {t['pair']}** by {ping} | Entry: {t['entry_price']} | SL: {t['sl_price']} | TP: {t['tp_price']}\n\n"
     else:
         desc += "*No active trades*\n\n"
-        
-    desc += "🔴 **Cancelled / Closed**\n"
-    if inactive_trades:
-        for t in inactive_trades:
-            ping = t.get('author_ping') or f"@{t.get('author_name')}"
-            status_word = "Closed" if t['status'] in ['CLOSED', 'TP_HIT', 'SL_HIT'] else "Cancelled"
-            desc += f"• ~~**{t['direction']} {t['pair']}** by {ping} | Entry: {t['entry_price']}~~ ({status_word})\n\n"
-    else:
-        desc += "*No inactive trades*\n\n"
         
     embed.description = desc
     return embed

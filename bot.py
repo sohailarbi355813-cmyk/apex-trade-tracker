@@ -172,9 +172,9 @@ async def on_message(message: discord.Message):
                     database.update_message_ids(trade_id, sent_message.id, sent_message.channel.id, pub_msg_id, pub_ch_id, active_msg_id, active_ch_id)
                     
                     # Map to a box
-                    box_id = database.get_current_box_id()
+                    box_id = database.get_current_box_id(author_ping)
                     if box_id is None:
-                        box_id = database.create_new_box_id()
+                        box_id = database.create_new_box_id(author_ping)
                     database.assign_trade_to_box(trade_id, box_id)
                     
                     # Update box
