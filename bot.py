@@ -83,6 +83,19 @@ async def on_ready():
     if not price_check_loop.is_running():
         price_check_loop.start()
 
+@bot.command()
+async def reset_trades(ctx):
+    # Only allow in testing or by admins if needed, for now open to anyone
+    import sqlite3
+    conn = sqlite3.connect(database.DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM trades")
+    conn.commit()
+    conn.close()
+    database.clear_global_dashboard()
+    database.set_setting('global_box_updates', '0')
+    await ctx.send("✅ All old test trades have been wiped from the database! The next trade will start completely fresh.")
+
 @bot.event
 async def on_message(message: discord.Message):
     if message.author == bot.user:
