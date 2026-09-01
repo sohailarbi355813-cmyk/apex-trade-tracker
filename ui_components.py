@@ -69,10 +69,6 @@ class UpdateModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             new_value = float(self.new_price.value)
-            
-            # Use binance API to check if trade hit SL/TP before updating anything
-            if await check_api_stops(self.trade_id, interaction):
-                return
                 
             action_msg = ""
             if self.field_to_update == 'tp':
@@ -116,7 +112,6 @@ class TradeView(discord.ui.View):
 
     @discord.ui.button(label="Update SL", style=discord.ButtonStyle.secondary, row=0)
     async def update_sl_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if await check_api_stops(self.trade_id, interaction): return
         modal = UpdateModal(self.trade_id, 'sl', title="Update Stop Loss")
         await interaction.response.send_modal(modal)
 
@@ -131,7 +126,6 @@ class TradeView(discord.ui.View):
 
     @discord.ui.button(label="Update TP", style=discord.ButtonStyle.secondary, row=0)
     async def update_tp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if await check_api_stops(self.trade_id, interaction): return
         modal = UpdateModal(self.trade_id, 'tp', title="Update Take Profit")
         await interaction.response.send_modal(modal)
 
