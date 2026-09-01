@@ -119,13 +119,18 @@ async def on_message(message: discord.Message):
                     logging.error(f"Failed to fetch CMP for {trade_data['pair']}. Defaulting to 0.0")
                     trade_data['entry'] = 0.0
                     
+            # Determine who to ping
+            author_mention = message.author.mention
+            if message.role_mentions:
+                author_mention = message.role_mentions[0].mention
+                
             trade_id = database.insert_trade(
                 trade_data['pair'],
                 trade_data['direction'],
                 trade_data['entry'],
                 trade_data['tp'],
                 trade_data['sl'],
-                message.author.display_name,
+                author_mention,
                 status=initial_status
             )
             
@@ -140,7 +145,7 @@ async def on_message(message: discord.Message):
             if trade_channel:
                 embed = ui_components.create_trade_embed(trade)
                 view = ui_components.TradeView(trade_id)
-                msg_content = f"Trade By @{message.author.display_name}"
+                msg_content = f"Trade By {author_mention}"
                 try:
                     sent_message = await trade_channel.send(content=msg_content, embed=embed, view=view)
                     

@@ -45,7 +45,7 @@ async def check_api_stops(trade_id, interaction: discord.Interaction):
         else:
             action_msg = f"Stop Loss Hit @ {current_price} ❌"
             
-        interaction.client.dispatch("trade_action", updated_trade, action_msg, interaction.user.display_name)
+        interaction.client.dispatch("trade_action", updated_trade, action_msg, updated_trade['author_name'])
         await interaction.response.send_message(f"Action blocked: Trade already hit {new_status} at {current_price}!", ephemeral=True)
         return True
         
@@ -86,7 +86,7 @@ class UpdateModal(discord.ui.Modal):
             await update_message_embed(interaction.message, updated_trade, interaction.client)
             
             # Dispatch event to update logs and active trades
-            interaction.client.dispatch("trade_action", updated_trade, action_msg, interaction.user.display_name)
+            interaction.client.dispatch("trade_action", updated_trade, action_msg, updated_trade['author_name'])
             
             await interaction.response.send_message(f"Successfully updated {self.field_to_update.upper()} to {new_value}.", ephemeral=True)
         except ValueError:
@@ -109,7 +109,7 @@ class TradeView(discord.ui.View):
             updated_trade = database.get_trade(self.trade_id)
             await update_message_embed(interaction.message, updated_trade, interaction.client)
             
-            interaction.client.dispatch("trade_action", updated_trade, "⚖️ SL moved to BE", interaction.user.display_name)
+            interaction.client.dispatch("trade_action", updated_trade, "SL moved to BE", updated_trade['author_name'])
             await interaction.response.send_message("Stop loss moved to break even.", ephemeral=True)
         else:
             await interaction.response.send_message("Trade not found.", ephemeral=True)
@@ -126,7 +126,7 @@ class TradeView(discord.ui.View):
         updated_trade = database.get_trade(self.trade_id)
         await update_message_embed(interaction.message, updated_trade, interaction.client)
         
-        interaction.client.dispatch("trade_action", updated_trade, "✅ Take Profit Hit (Manually)", interaction.user.display_name)
+        interaction.client.dispatch("trade_action", updated_trade, "✅ Take Profit Hit (Manually)", updated_trade['author_name'])
         await interaction.response.send_message("Marked as TP Hit manually.", ephemeral=True)
 
     @discord.ui.button(label="Update TP", style=discord.ButtonStyle.secondary, row=0)
@@ -146,7 +146,7 @@ class TradeView(discord.ui.View):
         await interaction.message.edit(view=self)
         
         # Don't log to updates channel
-        interaction.client.dispatch("trade_action", updated_trade, "", interaction.user.display_name)
+        interaction.client.dispatch("trade_action", updated_trade, "", updated_trade['author_name'])
         
         # Log to Active Trades channel directly (removed, handled by dashboard logic in bot.py)
         await interaction.response.send_message("Trade cancelled and closed.", ephemeral=True)
@@ -160,7 +160,7 @@ class TradeView(discord.ui.View):
             await update_message_embed(interaction.message, updated_trade, interaction.client)
             
             # Send an empty action_msg so it doesn't log to Updates channel
-            interaction.client.dispatch("trade_action", updated_trade, "", interaction.user.display_name)
+            interaction.client.dispatch("trade_action", updated_trade, "", updated_trade['author_name'])
             
             # (Dashboard update handled in bot.py)
             
@@ -248,17 +248,15 @@ def create_global_log_box(trades):
     desc = "🟢 **Active Entries**\n"
     if active_trades:
         for t in active_trades:
-            clean_author = t['author_name'].replace('_', '\\_')
-            desc += f"• **{t['direction']} {t['pair']}** by @{clean_author} | Entry: {t['entry_price']} | SL: {t['sl_price']} | TP: {t['tp_price']}\n\n"
+            desc += f"• **{t['direction']} {t['pair']}** by {t['author_name']} | Entry: {t['entry_price']} | SL: {t['sl_price']} | TP: {t['tp_price']}\n\n"
     else:
         desc += "*No active trades*\n\n"
         
     desc += "🔴 **Cancelled / Closed**\n"
     if inactive_trades:
         for t in inactive_trades:
-            clean_author = t['author_name'].replace('_', '\\_')
             status_word = "Closed" if t['status'] in ['CLOSED', 'TP_HIT', 'SL_HIT'] else "Cancelled"
-            desc += f"• ~~**{t['direction']} {t['pair']}** by @{clean_author} | Entry: {t['entry_price']}~~ ({status_word})\n\n"
+            desc += f"• ~~**{t['direction']} {t['pair']}** by {t['author_name']} | Entry: {t['entry_price']}~~ ({status_word})\n\n"
     else:
         desc += "*No inactive trades*\n\n"
         
