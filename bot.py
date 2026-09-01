@@ -25,23 +25,29 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Removed dashboard logic
-
-async def update_user_dashboard(author_name, client):
+async def update_global_log_box(client):
     active_channel_id = int(os.getenv('ACTIVE_TRADES_CHANNEL_ID', '0'))
     active_channel = client.get_channel(active_channel_id)
     if not active_channel:
         return
         
-    trades = database.get_dashboard_trades_for_author(author_name)
-    embed = ui_components.create_user_dashboard_embed(author_name, trades)
+    updates_count = int(database.get_setting('global_box_updates') or 0)
     
-    dashboard_info = database.get_dashboard(author_name)
+    if updates_count >= 10:
+        database.clear_global_dashboard()
+        updates_count = 0
+        
+    active_trades = database.get_recent_active_trades()
+    inactive_trades = database.get_recent_inactive_trades()
+    embed = ui_components.create_global_log_box(active_trades, inactive_trades)
     
-    if dashboard_info and dashboard_info['message_id']:
+    msg_id = database.get_setting('global_log_message_id')
+    
+    if msg_id:
         try:
-            msg = await active_channel.fetch_message(dashboard_info['message_id'])
+            msg = await active_channel.fetch_message(int(msg_id))
             await msg.edit(embed=embed)
+            database.set_setting('global_box_updates', str(updates_count + 1))
             return
         except discord.NotFound:
             pass # Message deleted, fall through to send a new one
@@ -52,7 +58,9 @@ async def update_user_dashboard(author_name, client):
     # Send new dashboard message
     try:
         msg = await active_channel.send(embed=embed)
-        database.set_dashboard(author_name, msg.id, active_channel.id)
+        database.set_setting('global_log_message_id', str(msg.id))
+        database.set_setting('global_log_channel_id', str(active_channel.id))
+        database.set_setting('global_box_updates', '1')
     except Exception as e:
         logging.error(f"Error sending new dashboard: {e}")
 
@@ -66,7 +74,7 @@ async def on_trade_action(trade, action_msg, author_name):
         await updates_channel.send(log_text)
         
     # Update dashboard
-    await update_user_dashboard(author_name, bot)
+    await update_global_log_box(bot)
 
 @bot.event
 async def on_ready():
@@ -147,7 +155,7 @@ async def on_message(message: discord.Message):
                     database.update_message_ids(trade_id, sent_message.id, sent_message.channel.id, pub_msg_id, pub_ch_id, active_msg_id, active_ch_id)
                     
                     # Update dashboard
-                    await update_user_dashboard(message.author.display_name, bot)
+                    await update_global_log_box(bot)
                 except discord.Forbidden:
                     logging.error(f"Missing permissions to send messages to Trade channel: {TRADE_CHANNEL_ID}")
                 except Exception as e:

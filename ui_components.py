@@ -238,35 +238,24 @@ def create_trade_embed(trade_data):
     embed.description = description
     return embed
 
-def create_user_dashboard_embed(author_name, trades):
+def create_global_log_box(active_trades, inactive_trades):
     embed = discord.Embed(color=discord.Color.dark_theme())
-    embed.title = f"{author_name} — Active Trades"
+    embed.title = "Global Trade Log"
     
-    running_trades = [t for t in trades if t['status'] in ['ACTIVE', 'BE']]
-    waiting_trades = [t for t in trades if t['status'] == 'WAITING']
-    invalid_trades = [t for t in trades if t['status'] in ['CLOSED', 'CANCELLED', 'TP_HIT', 'SL_HIT']]
-    
-    desc = "🏃 **Running (Valid For Entry)**\n"
-    if running_trades:
-        for t in running_trades:
-            desc += f"• **{t['direction']} {t['pair']}** | Entry: `{t['entry_price']}` | SL: `{t['sl_price']}` | TP: `{t['tp_price']}`\n\n"
+    desc = "🟢 **Active Entries (Max 5)**\n"
+    if active_trades:
+        for t in active_trades:
+            desc += f"• Entry **{t['direction']} {t['pair']}** by @{t['author_name']} is valid\n"
     else:
-        desc += "*No trades available*\n\n"
+        desc += "*No active trades*\n"
         
-    desc += "🟢 **Valid Limits (Not Yet Filled)**\n"
-    if waiting_trades:
-        for t in waiting_trades:
-            desc += f"• **{t['direction']} {t['pair']}** | Entry: `{t['entry_price']}` | SL: `{t['sl_price']}` | TP: `{t['tp_price']}`\n\n"
+    desc += "\n🔴 **Cancelled / Closed (Max 5)**\n"
+    if inactive_trades:
+        for t in inactive_trades:
+            status_word = "closed" if t['status'] in ['CLOSED', 'TP_HIT', 'SL_HIT'] else "cancelled"
+            desc += f"• Entry **{t['pair']} {t['direction']} {t['entry_price']}** is {status_word} by @{t['author_name']}\n"
     else:
-        desc += "*No trades available*\n\n"
-        
-    desc += "🔴 **Invalid (Running & Stops At Entry)**\n"
-    if invalid_trades:
-        # Only show the 5 most recent invalid trades
-        for t in invalid_trades[:5]:
-            desc += f"• **{t['direction']} {t['pair']}** | Entry: `{t['entry_price']}` | SL: `{t['sl_price']}` | TP: `{t['tp_price']}`\n\n"
-    else:
-        desc += "*No trades available*\n\n"
+        desc += "*No inactive trades*\n"
         
     embed.description = desc
     return embed

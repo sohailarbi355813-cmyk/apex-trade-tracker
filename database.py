@@ -40,13 +40,6 @@ def init_db():
             value TEXT
         )
     ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS dashboards (
-            author_name TEXT PRIMARY KEY,
-            message_id INTEGER,
-            channel_id INTEGER
-        )
-    ''')
     conn.commit()
     conn.close()
 
@@ -146,43 +139,50 @@ def get_trade(trade_id):
     conn.close()
     return dict(row) if row else None
 
-def get_dashboard(author_name):
+def get_setting(key):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('SELECT message_id, channel_id FROM dashboards WHERE author_name = ?', (author_name,))
+    cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
     row = cursor.fetchone()
     conn.close()
-    return {'message_id': row[0], 'channel_id': row[1]} if row else None
+    return row[0] if row else None
 
-def set_dashboard(author_name, message_id, channel_id):
+def set_setting(key, value):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO dashboards (author_name, message_id, channel_id) VALUES (?, ?, ?)
-        ON CONFLICT(author_name) DO UPDATE SET message_id = excluded.message_id, channel_id = excluded.channel_id
-    ''', (author_name, message_id, channel_id))
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
     conn.commit()
     conn.close()
 
-def get_all_authors_with_trades():
+def clear_global_dashboard():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # We want authors who have active trades, or recently closed ones
-    cursor.execute('SELECT DISTINCT author_name FROM trades')
-    rows = cursor.fetchall()
+    cursor.execute("DELETE FROM settings WHERE key IN ('global_log_message_id', 'global_log_channel_id', 'global_box_updates')")
+    conn.commit()
     conn.close()
-    return [row[0] for row in rows]
 
-def get_dashboard_trades_for_author(author_name):
+def get_recent_active_trades():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    # Fetch ACTIVE/WAITING/BE plus recent closed/cancelled/hit
     cursor.execute('''
         SELECT * FROM trades 
-        WHERE author_name = ? AND (status IN ('ACTIVE', 'WAITING', 'BE') OR status IN ('CLOSED', 'CANCELLED', 'TP_HIT', 'SL_HIT'))
-        ORDER BY id DESC LIMIT 20
-    ''', (author_name,))
+        WHERE status IN ('ACTIVE', 'WAITING', 'BE')
+        ORDER BY id DESC LIMIT 5
+    ''')
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+    
+def get_recent_inactive_trades():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM trades 
+        WHERE status IN ('CLOSED', 'CANCELLED', 'TP_HIT', 'SL_HIT')
+        ORDER BY id DESC LIMIT 5
+    ''')
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
