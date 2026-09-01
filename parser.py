@@ -7,7 +7,7 @@ def parse_trade_signal(message_content):
     Returns a dict with pair, direction, entry, sl, tp if successful, else None.
     """
     # Clean up the message for easier regex matching (remove formatting like ** or __)
-    content = message_content.replace('*', '').replace('_', '').upper()
+    content = message_content.replace('*', '').replace('_', '').replace('-', ' ').upper()
     
     # Try to find Pair and Direction
     # Example matches: BTCUSDT LONG, ETH/USDT SHORT
