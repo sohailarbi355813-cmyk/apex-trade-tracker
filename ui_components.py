@@ -248,15 +248,17 @@ def create_global_log_box(trades):
     desc = "🟢 **Active Entries**\n"
     if active_trades:
         for t in active_trades:
-            desc += f"• **{t['direction']} {t['pair']}** by {t['author_name']} | Entry: {t['entry_price']} | SL: {t['sl_price']} | TP: {t['tp_price']}\n\n"
+            ping = t.get('author_ping') or f"@{t.get('author_name')}"
+            desc += f"• **{t['direction']} {t['pair']}** by {ping} | Entry: {t['entry_price']} | SL: {t['sl_price']} | TP: {t['tp_price']}\n\n"
     else:
         desc += "*No active trades*\n\n"
         
     desc += "🔴 **Cancelled / Closed**\n"
     if inactive_trades:
         for t in inactive_trades:
+            ping = t.get('author_ping') or f"@{t.get('author_name')}"
             status_word = "Closed" if t['status'] in ['CLOSED', 'TP_HIT', 'SL_HIT'] else "Cancelled"
-            desc += f"• ~~**{t['direction']} {t['pair']}** by {t['author_name']} | Entry: {t['entry_price']}~~ ({status_word})\n\n"
+            desc += f"• ~~**{t['direction']} {t['pair']}** by {ping} | Entry: {t['entry_price']}~~ ({status_word})\n\n"
     else:
         desc += "*No inactive trades*\n\n"
         

@@ -40,6 +40,11 @@ def init_db():
     except sqlite3.OperationalError:
         pass # Column already exists
         
+    try:
+        cursor.execute("ALTER TABLE trades ADD COLUMN author_ping TEXT")
+    except sqlite3.OperationalError:
+        pass # Column already exists
+        
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS log_boxes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,13 +79,13 @@ def set_setting(key, value):
     conn.commit()
     conn.close()
 
-def insert_trade(pair, direction, entry, tp, sl, author_name, status='WAITING'):
+def insert_trade(pair, direction, entry, tp, sl, author_name, author_ping=None, status='WAITING'):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO trades (pair, direction, entry_price, tp_price, sl_price, author_name, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (pair.upper(), direction.upper(), float(entry), float(tp), float(sl), author_name, status.upper()))
+        INSERT INTO trades (pair, direction, entry_price, tp_price, sl_price, author_name, author_ping, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (pair.upper(), direction.upper(), float(entry), float(tp), float(sl), author_name, author_ping, status.upper()))
     trade_id = cursor.lastrowid
     conn.commit()
     conn.close()

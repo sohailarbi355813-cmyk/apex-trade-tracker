@@ -61,7 +61,8 @@ async def on_trade_action(trade, action_msg, author_name):
     # Log to updates channel only if action_msg is provided
     updates_channel = bot.get_channel(UPDATES_CHANNEL_ID)
     if updates_channel and action_msg:
-        log_text = f"{trade['direction']} {trade['pair']} : {action_msg} @{author_name}"
+        ping = trade.get('author_ping') or f"@{trade.get('author_name')}"
+        log_text = f"{trade['direction']} {trade['pair']} : {action_msg} {ping}"
         await updates_channel.send(log_text)
         
     # Update box
@@ -119,10 +120,12 @@ async def on_message(message: discord.Message):
                     logging.error(f"Failed to fetch CMP for {trade_data['pair']}. Defaulting to 0.0")
                     trade_data['entry'] = 0.0
                     
-            # Determine who to ping
-            author_mention = message.author.mention
+            # Determine who to ping and the display name
+            author_name = message.author.display_name
+            author_ping = message.author.mention
             if message.role_mentions:
-                author_mention = message.role_mentions[0].mention
+                author_name = message.role_mentions[0].name
+                author_ping = message.role_mentions[0].mention
                 
             trade_id = database.insert_trade(
                 trade_data['pair'],
@@ -130,7 +133,8 @@ async def on_message(message: discord.Message):
                 trade_data['entry'],
                 trade_data['tp'],
                 trade_data['sl'],
-                author_mention,
+                author_name,
+                author_ping=author_ping,
                 status=initial_status
             )
             
@@ -145,7 +149,7 @@ async def on_message(message: discord.Message):
             if trade_channel:
                 embed = ui_components.create_trade_embed(trade)
                 view = ui_components.TradeView(trade_id)
-                msg_content = f"Trade By {author_mention}"
+                msg_content = f"Trade By {author_ping}"
                 try:
                     sent_message = await trade_channel.send(content=msg_content, embed=embed, view=view)
                     
