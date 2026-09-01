@@ -27,6 +27,36 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 # Removed dashboard logic
 
+async def update_user_dashboard(author_name, client):
+    active_channel_id = int(os.getenv('ACTIVE_TRADES_CHANNEL_ID', '0'))
+    active_channel = client.get_channel(active_channel_id)
+    if not active_channel:
+        return
+        
+    trades = database.get_dashboard_trades_for_author(author_name)
+    embed = ui_components.create_user_dashboard_embed(author_name, trades)
+    
+    dashboard_info = database.get_dashboard(author_name)
+    
+    if dashboard_info and dashboard_info['message_id']:
+        try:
+            msg = await active_channel.fetch_message(dashboard_info['message_id'])
+            await msg.edit(embed=embed)
+            return
+        except discord.NotFound:
+            pass # Message deleted, fall through to send a new one
+        except Exception as e:
+            logging.error(f"Error editing dashboard: {e}")
+            return
+            
+    # Send new dashboard message
+    try:
+        msg = await active_channel.send(embed=embed)
+        database.set_dashboard(author_name, msg.id, active_channel.id)
+    except Exception as e:
+        logging.error(f"Error sending new dashboard: {e}")
+
+
 @bot.event
 async def on_trade_action(trade, action_msg, author_name):
     # Log to updates channel only if action_msg is provided
@@ -35,34 +65,8 @@ async def on_trade_action(trade, action_msg, author_name):
         log_text = f"{trade['direction']} {trade['pair']} : {action_msg} @{author_name}"
         await updates_channel.send(log_text)
         
-    # Edit the active log message
-    if trade.get('active_log_message_id') and trade.get('active_log_channel_id'):
-        active_channel = bot.get_channel(trade['active_log_channel_id'])
-        if active_channel:
-            try:
-                active_msg = await active_channel.fetch_message(trade['active_log_message_id'])
-                current_content = active_msg.content.split('\n')[0] # Keep only original first line
-                
-                status = trade['status']
-                new_line = ""
-                if status == 'CANCELLED':
-                    new_line = "🔴 Entry is Inactive now"
-                elif status == 'CLOSED':
-                    new_line = "🔴 Trade closed manually"
-                elif status == 'TP_HIT':
-                    new_line = "🎯 Take Profit Hit"
-                elif status == 'SL_HIT':
-                    new_line = "❌ Stop Loss Hit"
-                elif status == 'ACTIVE':
-                    new_line = "🏃 Entry Filled / Running"
-                else:
-                    new_line = f"Status updated to {status}"
-                    
-                await active_msg.edit(content=f"{current_content}\n{new_line}")
-            except discord.NotFound:
-                pass
-            except Exception as e:
-                logging.error(f"Failed to edit active log message: {e}")
+    # Update dashboard
+    await update_user_dashboard(author_name, bot)
 
 @bot.event
 async def on_ready():
@@ -140,17 +144,10 @@ async def on_message(message: discord.Message):
 
                     active_msg_id = None
                     active_ch_id = None
-                    active_channel = bot.get_channel(ACTIVE_TRADES_CHANNEL_ID)
-                    if active_channel:
-                        try:
-                            order_type = "Market/CMP" if initial_status == 'ACTIVE' else "Limit"
-                            active_msg = await active_channel.send(f"🟢 **New Trade ({order_type}):** {trade['direction']} {trade['pair']} | Entry: {trade['entry_price']}")
-                            active_msg_id = active_msg.id
-                            active_ch_id = active_msg.channel.id
-                        except discord.Forbidden:
-                            logging.error(f"Missing permissions for Active Trades channel: {ACTIVE_TRADES_CHANNEL_ID}")
-                            
                     database.update_message_ids(trade_id, sent_message.id, sent_message.channel.id, pub_msg_id, pub_ch_id, active_msg_id, active_ch_id)
+                    
+                    # Update dashboard
+                    await update_user_dashboard(message.author.display_name, bot)
                 except discord.Forbidden:
                     logging.error(f"Missing permissions to send messages to Trade channel: {TRADE_CHANNEL_ID}")
                 except Exception as e:

@@ -148,15 +148,7 @@ class TradeView(discord.ui.View):
         # Don't log to updates channel
         interaction.client.dispatch("trade_action", updated_trade, "", interaction.user.display_name)
         
-        # Log to Active Trades channel directly
-        active_channel_id = int(os.getenv('ACTIVE_TRADES_CHANNEL_ID', '0'))
-        active_channel = interaction.client.get_channel(active_channel_id)
-        if active_channel:
-            try:
-                await active_channel.send(f"🚪 **Trade closed manually:** {updated_trade['direction']} {updated_trade['pair']} | @{interaction.user.display_name}")
-            except discord.Forbidden:
-                pass
-                
+        # Log to Active Trades channel directly (removed, handled by dashboard logic in bot.py)
         await interaction.response.send_message("Trade cancelled and closed.", ephemeral=True)
 
     @discord.ui.button(label="Mark as Inactive", style=discord.ButtonStyle.secondary, row=1)
@@ -170,14 +162,7 @@ class TradeView(discord.ui.View):
             # Send an empty action_msg so it doesn't log to Updates channel
             interaction.client.dispatch("trade_action", updated_trade, "", interaction.user.display_name)
             
-            # Log to Active Trades channel directly
-            active_channel_id = int(os.getenv('ACTIVE_TRADES_CHANNEL_ID', '0'))
-            active_channel = interaction.client.get_channel(active_channel_id)
-            if active_channel:
-                try:
-                    await active_channel.send(f"🔴 **Trade Cancelled/Invalid:** {trade['direction']} {trade['pair']} | Entry: {trade['entry_price']}")
-                except discord.Forbidden:
-                    pass
+            # (Dashboard update handled in bot.py)
             
             await interaction.response.send_message("Trade marked as Inactive (Cancelled).", ephemeral=True)
         else:
@@ -253,4 +238,36 @@ def create_trade_embed(trade_data):
     embed.description = description
     return embed
 
-# create_active_trades_embed removed
+def create_user_dashboard_embed(author_name, trades):
+    embed = discord.Embed(color=discord.Color.dark_theme())
+    embed.title = f"{author_name} — Active Trades"
+    
+    running_trades = [t for t in trades if t['status'] in ['ACTIVE', 'BE']]
+    waiting_trades = [t for t in trades if t['status'] == 'WAITING']
+    invalid_trades = [t for t in trades if t['status'] in ['CLOSED', 'CANCELLED', 'TP_HIT', 'SL_HIT']]
+    
+    desc = "🏃 **Running (Valid For Entry)**\n"
+    if running_trades:
+        for t in running_trades:
+            desc += f"• **{t['direction']} {t['pair']}** | Entry: `{t['entry_price']}` | SL: `{t['sl_price']}` | TP: `{t['tp_price']}`\n\n"
+    else:
+        desc += "*No trades available*\n\n"
+        
+    desc += "🟢 **Valid Limits (Not Yet Filled)**\n"
+    if waiting_trades:
+        for t in waiting_trades:
+            desc += f"• **{t['direction']} {t['pair']}** | Entry: `{t['entry_price']}` | SL: `{t['sl_price']}` | TP: `{t['tp_price']}`\n\n"
+    else:
+        desc += "*No trades available*\n\n"
+        
+    desc += "🔴 **Invalid (Running & Stops At Entry)**\n"
+    if invalid_trades:
+        # Only show the 5 most recent invalid trades
+        for t in invalid_trades[:5]:
+            desc += f"• **{t['direction']} {t['pair']}** | Entry: `{t['entry_price']}` | SL: `{t['sl_price']}` | TP: `{t['tp_price']}`\n\n"
+    else:
+        desc += "*No trades available*\n\n"
+        
+    embed.description = desc
+    return embed
+

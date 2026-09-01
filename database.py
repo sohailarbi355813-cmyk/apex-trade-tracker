@@ -40,6 +40,13 @@ def init_db():
             value TEXT
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS dashboards (
+            author_name TEXT PRIMARY KEY,
+            message_id INTEGER,
+            channel_id INTEGER
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -138,3 +145,44 @@ def get_trade(trade_id):
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
+
+def get_dashboard(author_name):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT message_id, channel_id FROM dashboards WHERE author_name = ?', (author_name,))
+    row = cursor.fetchone()
+    conn.close()
+    return {'message_id': row[0], 'channel_id': row[1]} if row else None
+
+def set_dashboard(author_name, message_id, channel_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO dashboards (author_name, message_id, channel_id) VALUES (?, ?, ?)
+        ON CONFLICT(author_name) DO UPDATE SET message_id = excluded.message_id, channel_id = excluded.channel_id
+    ''', (author_name, message_id, channel_id))
+    conn.commit()
+    conn.close()
+
+def get_all_authors_with_trades():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    # We want authors who have active trades, or recently closed ones
+    cursor.execute('SELECT DISTINCT author_name FROM trades')
+    rows = cursor.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
+
+def get_dashboard_trades_for_author(author_name):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    # Fetch ACTIVE/WAITING/BE plus recent closed/cancelled/hit
+    cursor.execute('''
+        SELECT * FROM trades 
+        WHERE author_name = ? AND (status IN ('ACTIVE', 'WAITING', 'BE') OR status IN ('CLOSED', 'CANCELLED', 'TP_HIT', 'SL_HIT'))
+        ORDER BY id DESC LIMIT 20
+    ''', (author_name,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
