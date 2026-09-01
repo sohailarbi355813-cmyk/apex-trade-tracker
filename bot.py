@@ -37,8 +37,18 @@ async def update_global_log_box(client):
         database.clear_global_dashboard()
         updates_count = 0
         
-    active_trades = database.get_recent_active_trades()
-    inactive_trades = database.get_recent_inactive_trades()
+        # Start the new box from the latest trade ID
+        conn = sqlite3.connect(database.DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT MAX(id) FROM trades")
+        max_id_row = cursor.fetchone()
+        conn.close()
+        max_id = (max_id_row[0] + 1) if max_id_row and max_id_row[0] else 0
+        database.set_setting('global_box_start_trade_id', str(max_id))
+        
+    start_id = int(database.get_setting('global_box_start_trade_id') or 0)
+    active_trades = database.get_recent_active_trades(start_id)
+    inactive_trades = database.get_recent_inactive_trades(start_id)
     embed = ui_components.create_global_log_box(active_trades, inactive_trades)
     
     msg_id = database.get_setting('global_log_message_id')
@@ -94,6 +104,7 @@ async def reset_trades(ctx):
     conn.close()
     database.clear_global_dashboard()
     database.set_setting('global_box_updates', '0')
+    database.set_setting('global_box_start_trade_id', '0')
     await ctx.send("✅ All old test trades have been wiped from the database! The next trade will start completely fresh.")
 
 @bot.event

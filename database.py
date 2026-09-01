@@ -161,28 +161,28 @@ def clear_global_dashboard():
     conn.commit()
     conn.close()
 
-def get_recent_active_trades():
+def get_recent_active_trades(start_trade_id=0):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute('''
         SELECT * FROM trades 
-        WHERE status IN ('ACTIVE', 'WAITING', 'BE')
+        WHERE status IN ('ACTIVE', 'WAITING', 'BE') AND id >= ?
         ORDER BY id DESC LIMIT 5
-    ''')
+    ''', (start_trade_id,))
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
     
-def get_recent_inactive_trades():
+def get_recent_inactive_trades(start_trade_id=0):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute('''
         SELECT * FROM trades 
-        WHERE status IN ('CLOSED', 'CANCELLED', 'TP_HIT', 'SL_HIT')
+        WHERE status IN ('CLOSED', 'CANCELLED', 'TP_HIT', 'SL_HIT') AND id >= ?
         ORDER BY id DESC LIMIT 5
-    ''')
+    ''', (start_trade_id,))
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
