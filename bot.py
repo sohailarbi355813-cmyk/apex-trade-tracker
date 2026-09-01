@@ -25,39 +25,22 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-async def update_global_log_box(client):
+async def update_box(box_id, client):
     active_channel_id = int(os.getenv('ACTIVE_TRADES_CHANNEL_ID', '0'))
     active_channel = client.get_channel(active_channel_id)
     if not active_channel:
         return
         
-    updates_count = int(database.get_setting('global_box_updates') or 0)
+    trades = database.get_trades_for_box(box_id)
+    embed = ui_components.create_global_log_box(trades)
     
-    if updates_count >= 10:
-        database.clear_global_dashboard()
-        updates_count = 0
-        
-        # Start the new box from the latest trade ID
-        conn = sqlite3.connect(database.DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT MAX(id) FROM trades")
-        max_id_row = cursor.fetchone()
-        conn.close()
-        max_id = (max_id_row[0] + 1) if max_id_row and max_id_row[0] else 0
-        database.set_setting('global_box_start_trade_id', str(max_id))
-        
-    start_id = int(database.get_setting('global_box_start_trade_id') or 0)
-    active_trades = database.get_recent_active_trades(start_id)
-    inactive_trades = database.get_recent_inactive_trades(start_id)
-    embed = ui_components.create_global_log_box(active_trades, inactive_trades)
-    
-    msg_id = database.get_setting('global_log_message_id')
+    box_info = database.get_box_message(box_id)
+    msg_id = box_info['message_id'] if box_info else None
     
     if msg_id:
         try:
             msg = await active_channel.fetch_message(int(msg_id))
             await msg.edit(embed=embed)
-            database.set_setting('global_box_updates', str(updates_count + 1))
             return
         except discord.NotFound:
             pass # Message deleted, fall through to send a new one
@@ -68,9 +51,7 @@ async def update_global_log_box(client):
     # Send new dashboard message
     try:
         msg = await active_channel.send(embed=embed)
-        database.set_setting('global_log_message_id', str(msg.id))
-        database.set_setting('global_log_channel_id', str(active_channel.id))
-        database.set_setting('global_box_updates', '1')
+        database.update_box_message(box_id, msg.id, active_channel.id)
     except Exception as e:
         logging.error(f"Error sending new dashboard: {e}")
 
@@ -83,8 +64,9 @@ async def on_trade_action(trade, action_msg, author_name):
         log_text = f"{trade['direction']} {trade['pair']} : {action_msg} @{author_name}"
         await updates_channel.send(log_text)
         
-    # Update dashboard
-    await update_global_log_box(bot)
+    # Update box
+    if trade and 'box_id' in trade and trade['box_id']:
+        await update_box(trade['box_id'], bot)
 
 @bot.event
 async def on_ready():
@@ -100,6 +82,7 @@ async def reset_trades(ctx):
     conn = sqlite3.connect(database.DB_PATH)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM trades")
+    cursor.execute("DELETE FROM log_boxes")
     conn.commit()
     conn.close()
     database.clear_global_dashboard()
@@ -178,8 +161,14 @@ async def on_message(message: discord.Message):
                     active_ch_id = None
                     database.update_message_ids(trade_id, sent_message.id, sent_message.channel.id, pub_msg_id, pub_ch_id, active_msg_id, active_ch_id)
                     
-                    # Update dashboard
-                    await update_global_log_box(bot)
+                    # Map to a box
+                    box_id = database.get_current_box_id()
+                    if box_id is None:
+                        box_id = database.create_new_box_id()
+                    database.assign_trade_to_box(trade_id, box_id)
+                    
+                    # Update box
+                    await update_box(box_id, bot)
                 except discord.Forbidden:
                     logging.error(f"Missing permissions to send messages to Trade channel: {TRADE_CHANNEL_ID}")
                 except Exception as e:

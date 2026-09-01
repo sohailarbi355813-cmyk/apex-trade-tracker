@@ -238,11 +238,14 @@ def create_trade_embed(trade_data):
     embed.description = description
     return embed
 
-def create_global_log_box(active_trades, inactive_trades):
+def create_global_log_box(trades):
     embed = discord.Embed(color=discord.Color.dark_theme())
     embed.title = "Global Trade Log"
     
-    desc = "🟢 **Active Entries (Max 5)**\n"
+    active_trades = [t for t in trades if t['status'] in ['ACTIVE', 'WAITING', 'BE']]
+    inactive_trades = [t for t in trades if t['status'] in ['CLOSED', 'CANCELLED', 'TP_HIT', 'SL_HIT']]
+    
+    desc = "🟢 **Active Entries**\n"
     if active_trades:
         for t in active_trades:
             clean_author = t['author_name'].replace('_', '\\_')
@@ -250,7 +253,7 @@ def create_global_log_box(active_trades, inactive_trades):
     else:
         desc += "*No active trades*\n\n"
         
-    desc += "🔴 **Cancelled / Closed (Max 5)**\n"
+    desc += "🔴 **Cancelled / Closed**\n"
     if inactive_trades:
         for t in inactive_trades:
             clean_author = t['author_name'].replace('_', '\\_')

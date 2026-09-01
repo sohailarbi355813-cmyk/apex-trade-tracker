@@ -34,6 +34,19 @@ def init_db():
         cursor.execute("ALTER TABLE trades ADD COLUMN active_log_channel_id INTEGER")
     except sqlite3.OperationalError:
         pass # Columns already exist
+        
+    try:
+        cursor.execute("ALTER TABLE trades ADD COLUMN box_id INTEGER")
+    except sqlite3.OperationalError:
+        pass # Column already exists
+        
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS log_boxes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER,
+            channel_id INTEGER
+        )
+    ''')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -161,28 +174,66 @@ def clear_global_dashboard():
     conn.commit()
     conn.close()
 
-def get_recent_active_trades(start_trade_id=0):
+def get_trades_for_box(box_id):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute('''
         SELECT * FROM trades 
-        WHERE status IN ('ACTIVE', 'WAITING', 'BE') AND id >= ?
-        ORDER BY id DESC LIMIT 5
-    ''', (start_trade_id,))
+        WHERE box_id = ?
+        ORDER BY id ASC
+    ''', (box_id,))
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
     
-def get_recent_inactive_trades(start_trade_id=0):
+def get_current_box_id():
+    # Returns the box_id that currently has less than 10 trades.
+    # If the latest box has >= 10, returns None.
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute('''
-        SELECT * FROM trades 
-        WHERE status IN ('CLOSED', 'CANCELLED', 'TP_HIT', 'SL_HIT') AND id >= ?
-        ORDER BY id DESC LIMIT 5
-    ''', (start_trade_id,))
-    rows = cursor.fetchall()
+    cursor.execute('SELECT id FROM log_boxes ORDER BY id DESC LIMIT 1')
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None
+        
+    box_id = row[0]
+    cursor.execute('SELECT COUNT(*) FROM trades WHERE box_id = ?', (box_id,))
+    count = cursor.fetchone()[0]
     conn.close()
-    return [dict(row) for row in rows]
+    
+    if count >= 10:
+        return None
+    return box_id
+
+def create_new_box_id():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO log_boxes DEFAULT VALUES')
+    box_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return box_id
+
+def assign_trade_to_box(trade_id, box_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE trades SET box_id = ? WHERE id = ?', (box_id, trade_id))
+    conn.commit()
+    conn.close()
+    
+def update_box_message(box_id, message_id, channel_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE log_boxes SET message_id = ?, channel_id = ? WHERE id = ?', (message_id, channel_id, box_id))
+    conn.commit()
+    conn.close()
+
+def get_box_message(box_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT message_id, channel_id FROM log_boxes WHERE id = ?', (box_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return {'message_id': row[0], 'channel_id': row[1]} if row else None
