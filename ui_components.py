@@ -139,8 +139,8 @@ class TradeView(discord.ui.View):
             child.disabled = True
         await interaction.message.edit(view=self)
         
-        # Don't log to updates channel
-        interaction.client.dispatch("trade_action", updated_trade, "", updated_trade['author_name'])
+        # Log to updates channel
+        interaction.client.dispatch("trade_action", updated_trade, "🚪 Trade closed manually", updated_trade['author_name'])
         
         # Log to Active Trades channel directly (removed, handled by dashboard logic in bot.py)
         await interaction.response.send_message("Trade cancelled and closed.", ephemeral=True)
@@ -153,8 +153,8 @@ class TradeView(discord.ui.View):
             updated_trade = database.get_trade(self.trade_id)
             await update_message_embed(interaction.message, updated_trade, interaction.client)
             
-            # Send an empty action_msg so it doesn't log to Updates channel
-            interaction.client.dispatch("trade_action", updated_trade, "", updated_trade['author_name'])
+            # Send action_msg so it logs to Updates channel
+            interaction.client.dispatch("trade_action", updated_trade, "🚫 Trade cancelled manually", updated_trade['author_name'])
             
             # (Dashboard update handled in bot.py)
             
